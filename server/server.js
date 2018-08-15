@@ -1,6 +1,8 @@
 const _ = require('lodash')
 const http = require('http')
 const express = require('express')
+const Keycloak = require('keycloak-connect')
+var session = require('express-session')
 const bodyParser = require('body-parser')
 const {graphqlExpress, graphiqlExpress} = require('apollo-server-express')
 const cors = require('cors')
@@ -20,6 +22,24 @@ module.exports = async ({graphQLConfig, graphiqlConfig, postgresConfig, schemaLi
   await connectDataSources(dataSources)
 
   const app = express()
+  var memoryStore = new session.MemoryStore()
+
+  app.use(session({
+    secret: 'TODO-CONFIG_SECRET',
+    resave: false,
+    saveUninitialized: true,
+    // TODO persistent session store
+    store: memoryStore
+  }))
+
+  var keycloak = new Keycloak({
+    store: memoryStore
+  })
+
+  app.use(keycloak.middleware({
+    logout: '/logout',
+    admin: '/'
+  }))
 
   // Wrap the Express server
   const server = http.createServer(app)
@@ -30,7 +50,7 @@ module.exports = async ({graphQLConfig, graphiqlConfig, postgresConfig, schemaLi
   app.use('*', cors())
   app.use(expressPino)
 
-  app.use('/graphql', bodyParser.json(), function (req, res, next) {
+  app.use('/graphql', keycloak.protect(), bodyParser.json(), function (req, res, next) {
     const context = {request: req}
     const graphql = graphqlExpress({schema, context, tracing})
     return graphql(req, res, next)
